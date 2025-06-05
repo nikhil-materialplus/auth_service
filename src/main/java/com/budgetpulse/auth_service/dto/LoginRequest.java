@@ -6,5 +6,5 @@ import lombok.Data;
 public class LoginRequest {
     private String email;
     private String password;
-    private String role; // Optional, typically for validation purposes
+    private String role;
 }
