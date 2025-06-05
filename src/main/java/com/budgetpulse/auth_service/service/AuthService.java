@@ -2,13 +2,11 @@ package com.budgetpulse.auth_service.service;
 
 import com.budgetpulse.auth_service.dto.AuthResponse;
 import com.budgetpulse.auth_service.dto.LoginRequest;
-import com.budgetpulse.auth_service.dto.SignupRequest;
+import com.budgetpulse.auth_service.exception.InvalidCredentialsException;
 import com.budgetpulse.auth_service.model.User;
 import com.budgetpulse.auth_service.repository.UserRepository;
+import com.budgetpulse.auth_service.security.JwtService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -17,52 +15,25 @@ import org.springframework.stereotype.Service;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final AuthenticationManager authenticationManager;
-
-    public AuthResponse signup(SignupRequest request) {
-        if (userRepository.findByUsername(request.getUsername()).isPresent()) {
-            throw new IllegalArgumentException("Username already exists");
-        }
-
-        if (!isValidPassword(request.getPassword())) {
-            throw new IllegalArgumentException("Password must be at least 8 characters long and contain at least one uppercase letter, one number, and one special character");
-        }
-
-        User user = User.builder()
-                .username(request.getUsername())
-                .password(passwordEncoder.encode(request.getPassword()))
-                .role(request.getRole())
-                .build();
-
-        userRepository.save(user);
-        String token = jwtService.generateToken(user);
-        return new AuthResponse(token);
-    }
+    // ✅ TODO: Add password encoder for production
+    // private final PasswordEncoder passwordEncoder;
 
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid credentials")); // ✅ FIXED: Generic error message
 
-        if (!user.getRole().equalsIgnoreCase(request.getRole())) {
-            throw new IllegalArgumentException("Invalid role for this user");
+        // ⚠️ WARNING: Plain text password comparison - USE PASSWORD ENCODER IN PRODUCTION!
+        if (!user.getPassword().equals(request.getPassword())) {
+            throw new InvalidCredentialsException("Invalid credentials");
         }
 
-        if (!isValidPassword(request.getPassword())) {
-            throw new IllegalArgumentException("Password must be at least 8 characters long and contain at least one uppercase letter, one number, and one special character");
+        // ✅ FIXED: Made role checking optional (remove if not needed)
+        if (request.getRole() != null && !user.getRole().equalsIgnoreCase(request.getRole())) {
+            throw new InvalidCredentialsException("Invalid credentials");
         }
-
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
-        );
 
         String token = jwtService.generateToken(user);
-        return new AuthResponse(token);
-    }
-
-    private boolean isValidPassword(String password) {
-        // At least one uppercase, one digit, one special char, min 8 characters
-        return password.matches("^(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$");
+        return new AuthResponse(token, user.getRole());
     }
 }
